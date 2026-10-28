@@ -1,0 +1,71 @@
+# The PQ Club test robot: runs the phone tests (Android Chrome and iPhone Safari) against the live Club test site
+# and the real club server, after every deploy and every night. Test code lives in pickleq (branch club-mode), folder e2e/.
+name: PQ Club robot
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ['Build and publish PQ Club']
+    types: [completed]
+  schedule:
+    - cron: '47 21 * * *' # 03:17 in India
+
+permissions:
+  contents: read
+  id-token: write # proves to the club server that it's this robot (no stored secret)
+
+concurrency:
+  group: robot
+  cancel-in-progress: false
+
+jobs:
+  robot:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the robot (pickleq, club-mode)
+        uses: actions/checkout@v7
+        with:
+          repository: workwithvineeth/pickleq
+          ref: club-mode
+          path: club-src
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Wait until the site serves this build
+        if: github.event_name == 'workflow_run'
+        working-directory: club-src
+        run: |
+          want=$(git rev-parse --short=7 HEAD)
+          for i in $(seq 1 30); do
+            js=$(curl -fsS "https://workwithvineeth.github.io/pqclub/?v=$RANDOM" | grep -o 'assets/index-[^"]*\.js' | head -1)
+            if [ -n "$js" ] && curl -fsS "https://workwithvineeth.github.io/pqclub/$js" | grep -q "$want"; then echo "Site has build $want"; exit 0; fi
+            sleep 20
+          done
+          echo "::warning::The site didn't show build $want within 10 minutes; testing what it serves now"
+
+      - name: Install the robot and its browsers
+        working-directory: club-src/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium webkit
+
+      - name: Run the robot
+        working-directory: club-src/e2e
+        env:
+          CI: 'true'
+        run: npx playwright test
+
+      - name: Keep the report and failure screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: robot-report
+          path: |
+            club-src/e2e/playwright-report
+            club-src/e2e/test-results
+            club-src/e2e/results.json
+          retention-days: 14
