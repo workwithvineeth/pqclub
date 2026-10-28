@@ -1,0 +1,57 @@
+# Publishes the PQ Club test app at https://workwithvineeth.github.io/pqclub/
+# The code lives in workwithvineeth/pickleq (branch club-mode); this repository only holds the published site.
+# It has its own address so Android doesn't treat it as part of the PICKLEQ app at /pickleq/.
+name: Build and publish PQ Club
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out PICKLEQ (club-mode)
+        uses: actions/checkout@v7
+        with:
+          repository: workwithvineeth/pickleq
+          ref: club-mode
+          path: club-src
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Test and build PQ Club
+        working-directory: club-src
+        env:
+          VITE_BASE: /pqclub/
+        run: |
+          npm ci
+          npm test
+          npm run build:club
+
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: club-src/dist/club
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
