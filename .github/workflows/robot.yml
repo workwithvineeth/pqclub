@@ -20,16 +20,27 @@ concurrency:
 
 jobs:
   robot:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    # After a deploy (not the hourly link-preview refresh, which rebuilds the same commit), nightly, or by hand.
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event != 'schedule')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Check out the robot (pickleq, club-mode)
+      - name: Read which commit is published
+        uses: actions/checkout@v7
+        with:
+          path: site
+
+      - name: Check out the robot (pickleq, the published commit)
         uses: actions/checkout@v7
         with:
           repository: workwithvineeth/pickleq
           ref: club-mode
           path: club-src
+          fetch-depth: 0
+
+      - name: Switch to the published commit
+        working-directory: club-src
+        run: git checkout --quiet "$(tr -d '[:space:]' < ../site/club-ref)"
 
       - uses: actions/setup-node@v7
         with:

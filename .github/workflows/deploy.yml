@@ -1,12 +1,18 @@
 # Publishes the PQ Club test app at https://workwithvineeth.github.io/pqclub/
 # The code lives in workwithvineeth/pickleq (branch club-mode); this repository only holds the published site.
 # It has its own address so Android doesn't treat it as part of the PICKLEQ app at /pickleq/.
+#
+# club-ref (in this repository) names the exact pickleq commit to publish. To deploy a new version, change club-ref
+# and push. The hourly run rebuilds that same commit only to refresh the event link-preview pages (for WhatsApp),
+# so it never ships code nobody chose.
 name: Build and publish PQ Club
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
+  schedule:
+    - cron: '23 * * * *' # hourly: new and changed events get their link-preview pages
 
 permissions:
   contents: read
@@ -21,12 +27,25 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out PICKLEQ (club-mode)
+      - name: Read which commit to publish
+        uses: actions/checkout@v7
+        with:
+          path: site
+
+      - name: Check out PICKLEQ at that commit
         uses: actions/checkout@v7
         with:
           repository: workwithvineeth/pickleq
           ref: club-mode
           path: club-src
+          fetch-depth: 0
+
+      - name: Switch to the pinned commit
+        working-directory: club-src
+        run: |
+          ref=$(tr -d '[:space:]' < ../site/club-ref)
+          git checkout --quiet "$ref"
+          echo "Publishing $(git rev-parse --short=7 HEAD)"
 
       - uses: actions/setup-node@v7
         with:
@@ -40,6 +59,10 @@ jobs:
           npm ci
           npm test
           npm run build:club
+
+      - name: Event link-preview pages
+        working-directory: club-src
+        run: node scripts/share-pages.mjs dist/club https://workwithvineeth.github.io/pqclub/
 
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
