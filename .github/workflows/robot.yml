@@ -71,8 +71,9 @@ jobs:
           if [ "$site" = "$old" ]; then echo "Site still on the old address; nothing to check."; exit 0; fi
           bad=0
           for path in "" "e/a6a1accf74/" "index.html"; do
-            got=$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' "$old$path")
-            if [ "$got" = "301 $site$path" ]; then echo "OK  $old$path → $site$path"
+            # GitHub forwards to http://<domain>/..., and Enforce HTTPS then moves it to https; follow both hops.
+            got=$(curl -sSL -o /dev/null -w '%{http_code} %{url_effective}' "$old$path")
+            if [ "$got" = "200 $site$path" ]; then echo "OK  $old$path → $site$path"
             else echo "- Old link $old$path should forward to $site$path, got: $got" | tee -a oldlinks.md; bad=1; fi
           done
           code=$(curl -sS -o /dev/null -w '%{http_code}' "${site}e/a6a1accf74/")
