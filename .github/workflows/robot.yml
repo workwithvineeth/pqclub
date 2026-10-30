@@ -60,6 +60,25 @@ jobs:
           done
           echo "::warning::The site didn't show build $want within 10 minutes; testing what it serves now"
 
+      - name: Old address forwards to the new one
+        id: oldlinks
+        continue-on-error: true
+        run: |
+          # Links shared before the move (github.io/pqclub/...) must land on the same page at the site address.
+          site=$(tr -d '[:space:]' < site/site-url)
+          old=https://workwithvineeth.github.io/pqclub/
+          : > oldlinks.md
+          if [ "$site" = "$old" ]; then echo "Site still on the old address; nothing to check."; exit 0; fi
+          bad=0
+          for path in "" "e/a6a1accf74/" "index.html"; do
+            got=$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' "$old$path")
+            if [ "$got" = "301 $site$path" ]; then echo "OK  $old$path → $site$path"
+            else echo "- Old link $old$path should forward to $site$path, got: $got" | tee -a oldlinks.md; bad=1; fi
+          done
+          code=$(curl -sS -o /dev/null -w '%{http_code}' "${site}e/a6a1accf74/")
+          [ "$code" = "200" ] || { echo "- ${site}e/a6a1accf74/ (TPC share page) answered $code" | tee -a oldlinks.md; bad=1; }
+          exit $bad
+
       - name: Install the robot and its browsers
         working-directory: club-src/e2e
         run: |
@@ -91,11 +110,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          OK: ${{ steps.robot.outcome == 'success' }}
+          OK: ${{ steps.robot.outcome == 'success' && steps.oldlinks.outcome == 'success' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           sha=$(tr -d '[:space:]' < ../../site/club-ref | cut -c1-7)
-          { echo "### Robot on build $sha"; if [ -f summary.mjs ]; then node summary.mjs results.json; else echo "(summary script not in this build)"; fi; echo; echo "Report and screenshots: $RUN_URL (Artifacts → robot-report)"; } > summary.md || true
+          { echo "### Robot on build $sha"; if [ -f summary.mjs ]; then node summary.mjs results.json; else echo "(summary script not in this build)"; fi; if [ -s ../../oldlinks.md ]; then echo; echo "**Old links:**"; cat ../../oldlinks.md; fi; echo; echo "Report and screenshots: $RUN_URL (Artifacts → robot-report)"; } > summary.md || true
           cat summary.md >> "$GITHUB_STEP_SUMMARY"
           num=$(gh issue list --state open --label robot --json number --jq '.[0].number' 2>/dev/null)
           if [ "$OK" = "true" ]; then
