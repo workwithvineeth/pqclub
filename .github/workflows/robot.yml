@@ -52,9 +52,10 @@ jobs:
         working-directory: club-src
         run: |
           want=$(git rev-parse --short=7 HEAD)
+          site=$(tr -d '[:space:]' < ../site/site-url)
           for i in $(seq 1 30); do
-            js=$(curl -fsS "https://workwithvineeth.github.io/pqclub/?v=$RANDOM" | grep -o 'assets/index-[^"]*\.js' | head -1)
-            if [ -n "$js" ] && curl -fsS "https://workwithvineeth.github.io/pqclub/$js" | grep -q "$want"; then echo "Site has build $want"; exit 0; fi
+            js=$(curl -fsSL "$site?v=$RANDOM" | grep -o 'assets/index-[^"]*\.js' | head -1)
+            if [ -n "$js" ] && curl -fsSL "$site$js" | grep -q "$want"; then echo "Site has build $want"; exit 0; fi
             sleep 20
           done
           echo "::warning::The site didn't show build $want within 10 minutes; testing what it serves now"
@@ -71,7 +72,7 @@ jobs:
         working-directory: club-src/e2e
         env:
           CI: 'true'
-        run: npx playwright test
+        run: PQ_BASE=$(tr -d '[:space:]' < ../../site/site-url) npx playwright test
 
       - name: Keep the report and failure screenshots
         if: always()

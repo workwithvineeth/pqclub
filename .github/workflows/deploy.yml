@@ -1,4 +1,5 @@
-# Publishes the PQ Club test app at https://workwithvineeth.github.io/pqclub/
+# Publishes the PaddleQ club app at the address in site-url (https://paddleq.in/ after the move).
+# The build uses relative paths, so the same files work at the old /pqclub/ address and at the domain root.
 # The code lives in workwithvineeth/pickleq (branch club-mode); this repository only holds the published site.
 # It has its own address so Android doesn't treat it as part of the PICKLEQ app at /pickleq/.
 #
@@ -54,7 +55,7 @@ jobs:
       - name: Test and build PQ Club
         working-directory: club-src
         env:
-          VITE_BASE: /pqclub/
+          VITE_BASE: ./
         run: |
           npm ci
           npm test
@@ -62,7 +63,7 @@ jobs:
 
       - name: Event link-preview pages
         working-directory: club-src
-        run: node scripts/share-pages.mjs dist/club https://workwithvineeth.github.io/pqclub/
+        run: node scripts/share-pages.mjs dist/club "$(tr -d '[:space:]' < ../site/site-url)"
 
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
