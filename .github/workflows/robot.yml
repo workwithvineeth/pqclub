@@ -13,6 +13,7 @@ on:
 permissions:
   contents: read
   id-token: write # proves to the club server that it's this robot (no stored secret)
+  issues: write # opens one "Robot failed" issue with a short summary, closed again on the next green run
 
 concurrency:
   group: robot
@@ -65,6 +66,8 @@ jobs:
           npx playwright install --with-deps chromium webkit
 
       - name: Run the robot
+        id: robot
+        continue-on-error: true
         working-directory: club-src/e2e
         env:
           CI: 'true'
@@ -80,3 +83,25 @@ jobs:
             club-src/e2e/test-results
             club-src/e2e/results.json
           retention-days: 14
+
+      - name: Short summary (and a "Robot failed" issue when it fails)
+        if: always()
+        working-directory: club-src/e2e
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          OK: ${{ steps.robot.outcome == 'success' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          sha=$(tr -d '[:space:]' < ../../site/club-ref | cut -c1-7)
+          { echo "### Robot on build $sha"; if [ -f summary.mjs ]; then node summary.mjs results.json; else echo "(summary script not in this build)"; fi; echo; echo "Report and screenshots: $RUN_URL (Artifacts → robot-report)"; } > summary.md || true
+          cat summary.md >> "$GITHUB_STEP_SUMMARY"
+          num=$(gh issue list --state open --label robot --json number --jq '.[0].number' 2>/dev/null)
+          if [ "$OK" = "true" ]; then
+            [ -n "$num" ] && gh issue close "$num" --comment "Robot green again on build $sha." || true
+          else
+            gh label create robot --color B60205 2>/dev/null || true
+            if [ -n "$num" ]; then gh issue comment "$num" --body-file summary.md
+            else gh issue create --title "Robot failed" --label robot --body-file summary.md; fi
+            exit 1
+          fi
