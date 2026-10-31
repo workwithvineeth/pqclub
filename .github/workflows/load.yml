@@ -67,6 +67,10 @@ jobs:
         run: |
           { [ -f load-report.md ] && cat load-report.md || { echo "### Load test didn't finish"; tail -30 load.log; }; echo; echo "Run: $RUN_URL"; } > summary.md
           cat summary.md >> "$GITHUB_STEP_SUMMARY"
+          # Every run's report also goes to one open "Load test results" issue, so it can be read anywhere.
+          gh label create load-report --color 0E8A16 2>/dev/null || true
+          log=$(gh issue list --state open --label load-report --json number --jq '.[0].number' 2>/dev/null)
+          if [ -n "$log" ]; then gh issue comment "$log" --body-file summary.md || true; else gh issue create --title "Load test results" --label load-report --body-file summary.md || true; fi
           num=$(gh issue list --state open --label load --json number --jq '.[0].number' 2>/dev/null)
           if [ "$OK" = "true" ]; then
             [ -n "$num" ] && gh issue close "$num" --comment "Green again." || true
