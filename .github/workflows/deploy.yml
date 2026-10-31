@@ -65,6 +65,9 @@ jobs:
         working-directory: club-src
         run: node scripts/share-pages.mjs dist/club "$(tr -d '[:space:]' < ../site/site-url)"
 
+      - name: Organiser videos (kept in this repo, served at /media/)
+        run: if [ -d site/media ]; then mkdir -p club-src/dist/club/media && cp site/media/* club-src/dist/club/media/; fi
+
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
