@@ -1,0 +1,86 @@
+# The PaddleQ load robot: up to 20 test tournaments at once on the real club server (5 → 10 → 20), with referees, desks and
+# spectators. Test code lives in pickleq (branch club-mode), e2e/load/load.ts. It refuses to start while a real tournament is on,
+# and always deletes the test club it made. Run by hand (Actions → Load test → Run workflow) or weekly on Wednesday 03:17 in India.
+name: Load test
+
+on:
+  workflow_dispatch:
+    inputs:
+      tournaments:
+        description: 'How many tournaments at once at the top step (1–20)'
+        default: '20'
+      step_seconds:
+        description: 'Seconds at each step before adding more'
+        default: '150'
+  schedule:
+    - cron: '47 21 * * 2' # Wednesday 03:17 in India
+
+permissions:
+  contents: read
+  id-token: write # proves to the club server that it's this robot (no stored secret)
+  issues: write # one "Load test" issue with the report when it needs a look
+
+concurrency:
+  group: load
+  cancel-in-progress: false
+
+jobs:
+  load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Read which commit is published
+        uses: actions/checkout@v7
+        with:
+          path: site
+      - name: Check out the load robot (pickleq, the published commit)
+        uses: actions/checkout@v7
+        with:
+          repository: workwithvineeth/pickleq
+          ref: club-mode
+          path: club-src
+          fetch-depth: 0
+      - name: Switch to the published commit
+        working-directory: club-src
+        run: git checkout --quiet "$(tr -d '[:space:]' < ../site/club-ref)"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Run the load test
+        id: load
+        continue-on-error: true
+        working-directory: club-src/e2e
+        env:
+          LOAD_MAX: ${{ inputs.tournaments || '20' }}
+          LOAD_STEP_SECONDS: ${{ inputs.step_seconds || '150' }}
+        shell: bash
+        run: set -o pipefail; npx -y tsx load/load.ts 2>&1 | tee load.log
+      - name: Report (and a "Load test" issue when it needs a look)
+        if: always()
+        working-directory: club-src/e2e
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          OK: ${{ steps.load.outcome == 'success' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          { [ -f load-report.md ] && cat load-report.md || { echo "### Load test didn't finish"; tail -30 load.log; }; echo; echo "Run: $RUN_URL"; } > summary.md
+          cat summary.md >> "$GITHUB_STEP_SUMMARY"
+          num=$(gh issue list --state open --label load --json number --jq '.[0].number' 2>/dev/null)
+          if [ "$OK" = "true" ]; then
+            [ -n "$num" ] && gh issue close "$num" --comment "Green again." || true
+          else
+            gh label create load --color FBCA04 2>/dev/null || true
+            if [ -n "$num" ]; then gh issue comment "$num" --body-file summary.md; else gh issue create --title "Load test needs a look" --label load --body-file summary.md; fi
+            exit 1
+          fi
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: load-report
+          path: |
+            club-src/e2e/load-report.md
+            club-src/e2e/load.log
+          retention-days: 30
