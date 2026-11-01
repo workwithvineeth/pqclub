@@ -1,0 +1,37 @@
+# Live log of TPC Diwali Dhamaka (1 Nov 2026): a snapshot of the public results every 30 minutes, posted to one issue
+# ("TPC live log"). No AI and no secrets: it reads the same public data as the results page. Turns itself off (skips)
+# once the tournament is marked finished. Delete this file after the event.
+name: TPC live log
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  log:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Snapshot and post
+        env:
+          SB_URL: https://bgaorexagktxxofdkbcm.supabase.co
+          SB_KEY: sb_publishable_h3jau9ZFrZlu4YBHIiE_Fg_dJrz0hy3
+          SLUG: a6a1accf74
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/tpc-log.mjs
+          gh label create tpc-log --color 7A1F2B 2>/dev/null || true
+          num=$(gh issue list --state all --label tpc-log --json number --jq '.[0].number' 2>/dev/null)
+          # Once the tournament is finished and the log is closed, there is nothing more to record.
+          if [ -n "$num" ] && [ "$(cat status.txt)" = "done" ] && [ "$(gh issue view "$num" --json state --jq .state)" = "CLOSED" ]; then echo "finished; log closed"; exit 0; fi
+          if [ -z "$num" ]; then gh issue create --title "TPC live log" --label tpc-log --body-file summary.md; else gh issue comment "$num" --body-file summary.md; fi
+          if [ "$(cat status.txt)" = "done" ]; then gh issue close "$num" --comment "Tournament finished: logging stops." 2>/dev/null || true; fi
